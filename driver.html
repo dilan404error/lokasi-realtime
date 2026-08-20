@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pengirim Lokasi Bus</title>
+<style>
+  body { font-family: sans-serif; text-align: center; padding: 40px 20px; }
+  input { padding: 10px; font-size: 16px; width: 220px; margin-bottom: 15px; display: block; margin-left: auto; margin-right: auto; }
+  button { padding: 12px 24px; font-size: 16px; background: #1a73e8; color: white; border: none; border-radius: 6px; }
+  #status { margin-top: 20px; font-size: 14px; color: #555; }
+</style>
+</head>
+<body>
+
+<h2>Pengirim Lokasi Bus</h2>
+<input type="text" id="busId" placeholder="ID Bus (contoh: BUS01)">
+<input type="text" id="driverName" placeholder="Nama Supir">
+<button onclick="mulaiKirim()">Mulai Kirim Lokasi</button>
+<div id="status">Status: belum aktif</div>
+
+<script>
+// GANTI dengan URL Web App hasil deploy Apps Script kamu
+var WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbze4xT0EdGVid7Ub2U-LYTH8W-jTTr0cgZSmuHBbzBfQwVBrpGhi3ePR78DXpw0RaTY-g/exec';
+
+var intervalId = null;
+
+function mulaiKirim() {
+  var busId = document.getElementById('busId').value.trim();
+  var driverName = document.getElementById('driverName').value.trim();
+
+  if (!busId) {
+    alert('Isi ID Bus dulu');
+    return;
+  }
+  if (!driverName) {
+    alert('Isi Nama Supir dulu');
+    return;
+  }
+
+  if (intervalId) clearInterval(intervalId);
+
+  kirimLokasi(busId, driverName); // kirim langsung sekali
+  intervalId = setInterval(function () {
+    kirimLokasi(busId, driverName);
+  }, 10000); // kirim setiap 10 detik
+
+  document.getElementById('status').innerText =
+    'Status: mengirim lokasi tiap 10 detik untuk ' + busId + ' (Supir: ' + driverName + ')';
+}
+
+function kirimLokasi(busId, driverName) {
+  if (!navigator.geolocation) {
+    document.getElementById('status').innerText = 'GPS tidak didukung di perangkat ini';
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(function (pos) {
+    var lat = pos.coords.latitude;
+    var lng = pos.coords.longitude;
+
+    var url = WEB_APP_URL
+      + '?action=update'
+      + '&bus_id=' + encodeURIComponent(busId)
+      + '&driver_name=' + encodeURIComponent(driverName)
+      + '&lat=' + lat
+      + '&lng=' + lng;
+
+    fetch(url)
+      .then(function (res) { return res.json(); })
+      .then(function () {
+        document.getElementById('status').innerText =
+          'Terkirim: ' + lat.toFixed(5) + ', ' + lng.toFixed(5) + ' (' + new Date().toLocaleTimeString() + ')';
+      })
+      .catch(function () {
+        document.getElementById('status').innerText = 'Gagal mengirim lokasi, cek koneksi internet';
+      });
+  }, function (err) {
+    document.getElementById('status').innerText = 'Gagal ambil GPS: ' + err.message;
+  }, { enableHighAccuracy: true });
+}
+</script>
+
+</body>
+</html>
