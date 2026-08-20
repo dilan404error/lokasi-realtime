@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>Live Location Bus</title>
+
+    <!-- LEAFLET CSS -->
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+
+    <style>
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f5f5f5;
+        }
+
+        #map {
+            width: 100%;
+            height: 100vh;
+        }
+
+        /* PANEL */
+        .panel {
+            position: absolute;
+            z-index: 1000;
+
+            top: 20px;
+            right: 20px;
+
+            width: 260px;
+
+            background: white;
+
+            padding: 16px;
+
+            border-radius: 14px;
+
+            box-shadow:
+                0 4px 20px rgba(0,0,0,0.18);
+        }
+
+        .panel h2 {
+            margin: 0 0 12px 0;
+            font-size: 20px;
+        }
+
+        .status {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 12px;
+        }
+
+        .bus-list {
+            margin-top: 10px;
+        }
+
+        .bus-item {
+
+            display: flex;
+
+            align-items: center;
+
+            justify-content: space-between;
+
+            padding: 9px 0;
+
+            border-bottom: 1px solid #eee;
+
+        }
+
+        .bus-name {
+            font-weight: bold;
+        }
+
+        .bus-driver {
+            font-size: 12px;
+            color: #777;
+        }
+
+        .lihat-btn {
+
+            border: none;
+
+            background: #1976d2;
+
+            color: white;
+
+            padding: 7px 12px;
+
+            border-radius: 7px;
+
+            cursor: pointer;
+
+        }
+
+        .lihat-btn:hover {
+            background: #125aa0;
+        }
+
+        .refresh-btn {
+
+            width: 100%;
+
+            border: none;
+
+            background: #1976d2;
+
+            color: white;
+
+            padding: 12px;
+
+            border-radius: 9px;
+
+            font-size: 15px;
+
+            cursor: pointer;
+
+            margin-bottom: 10px;
+
+        }
+
+        .refresh-btn:hover {
+            background: #125aa0;
+        }
+
+
+        /* MARKER BUS */
+
+        .bus-marker {
+
+            width: 42px;
+            height: 42px;
+
+            border-radius: 50%;
+
+            background: #1976d2;
+
+            border: 4px solid white;
+
+            box-shadow:
+                0 3px 10px rgba(0,0,0,0.35);
+
+            display: flex;
+
+            justify-content: center;
+
+            align-items: center;
+
+            font-size: 22px;
+
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+
+<div id="map"></div>
+
+
+<div class="panel">
+
+    <h2>🚌 Cek Posisi Bus</h2>
+
+    <button
+        class="refresh-btn"
+        onclick="loadBusData()">
+
+        🔄 Refresh Posisi
+
+    </button>
+
+    <div
+        class="status"
+        id="status">
+
+        Menghubungkan...
+
+    </div>
+
+    <div
+        class="bus-list"
+        id="busList">
+
+        Memuat data bus...
+
+    </div>
+
+</div>
+
+
+
+<!-- LEAFLET JS -->
+
+<script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
+</script>
+
+
+<script>
+
+    /*
+    ==================================================
+    GOOGLE APPS SCRIPT WEB APP
+    ==================================================
+    */
+
+    const API_URL =
+        "https://docs.google.com/spreadsheets/d/1z7uVIgvyVl93Jxp13WtwLoFs5HyV_QxJox9qmwtgbik/edit?usp=sharing";
+
+
+    /*
+    ==================================================
+    MAP
+    ==================================================
+    */
+
+    const map = L.map('map', {
+
+        zoomControl: true
+
+    }).setView(
+        [-8.112, 115.088],
+        12
+    );
+
+
+    /*
+    OPENSTREETMAP
+    */
+
+    L.tileLayer(
+        'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        {
+
+            maxZoom: 19,
+
+            attribution:
+                '&copy; OpenStreetMap contributors'
+
+        }
+    ).addTo(map);
+
+
+
+    /*
+    ==================================================
+    PENYIMPAN MARKER
+    ==================================================
+    */
+
+    const markers = {};
+
+    let firstLoad = true;
+
+
+
+    /*
+    ==================================================
+    ICON BUS
+    ==================================================
+    */
+
+    const busIcon = L.divIcon({
+
+        className: '',
+
+        html: `
+            <div class="bus-marker">
+                🚌
+            </div>
+        `,
+
+        iconSize: [42, 42],
+
+        iconAnchor: [21, 21],
+
+        popupAnchor: [0, -21]
+
+    });
+
+
+
+    /*
+    ==================================================
+    JSONP
+    ==================================================
+    */
+
+    function loadBusData() {
+
+        document.getElementById("status").innerText =
+            "Mengambil posisi bus...";
+
+
+        const callbackName =
+            "busCallback_" + Date.now();
+
+
+        window[callbackName] = function(data) {
+
+            try {
+
+                console.log("Data bus:", data);
+
+                if (!Array.isArray(data)) {
+
+                    throw new Error(
+                        "Format data tidak sesuai"
+                    );
+
+                }
+
+                showBusData(data);
+
+            }
+
+            catch(error) {
+
+                console.error(error);
+
+                document.getElementById("status").innerText =
+                    "Gagal membaca data bus.";
+
+            }
+
+
+            delete window[callbackName];
+
+            const script =
+                document.getElementById(callbackName);
+
+            if (script) {
+                script.remove();
+            }
+
+        };
+
+
+        const script =
+            document.createElement("script");
+
+
+        script.id = callbackName;
+
+
+        script.src =
+            API_URL +
+            "?action=get&callback=" +
+            callbackName;
+
+
+        script.onerror = function() {
+
+            document.getElementById("status").innerText =
+                "❌ Gagal terhubung ke server.";
+
+            console.error(
+                "Tidak bisa mengakses:",
+                script.src
+            );
+
+            delete window[callbackName];
+
+            script.remove();
+
+        };
+
+
+        document.body.appendChild(script);
+
+    }
+
+
+
+    /*
+    ==================================================
+    TAMPILKAN DATA BUS
+    ==================================================
+    */
+
+    function showBusData(data) {
+
+        const busList =
+            document.getElementById("busList");
+
+
+        busList.innerHTML = "";
+
+
+        if (data.length === 0) {
+
+            busList.innerHTML =
+                "<p>Belum ada bus aktif.</p>";
+
+            document.getElementById("status").innerText =
+                "Tidak ada data bus.";
+
+            return;
+
+        }
+
+
+        document.getElementById("status").innerText =
+            "Terakhir diperbarui: " +
+            new Date().toLocaleTimeString(
+                "id-ID"
+            );
+
+
+        data.forEach(function(bus) {
+
+            const lat =
+                parseFloat(bus.lat);
+
+            const lng =
+                parseFloat(bus.lng);
+
+
+            /*
+            CEK KOORDINAT
+            */
+
+            if (
+                isNaN(lat) ||
+                isNaN(lng)
+            ) {
+
+                console.warn(
+                    "Koordinat tidak valid:",
+                    bus
+                );
+
+                return;
+
+            }
+
+
+            /*
+            ==================================================
+            MARKER SUDAH ADA
+            ==================================================
+            */
+
+            if (markers[bus.bus_id]) {
+
+                markers[bus.bus_id]
+                    .setLatLng([lat, lng]);
+
+                markers[bus.bus_id]
+                    .setPopupContent(
+
+                        createPopup(bus)
+
+                    );
+
+            }
+
+
+            /*
+            ==================================================
+            MARKER BARU
+            ==================================================
+            */
+
+            else {
+
+                const marker =
+                    L.marker(
+                        [lat, lng],
+                        {
+                            icon: busIcon
+                        }
+                    ).addTo(map);
+
+
+                marker.bindPopup(
+                    createPopup(bus)
+                );
+
+
+                markers[bus.bus_id] =
+                    marker;
+
+            }
+
+
+            /*
+            ==================================================
+            LIST BUS
+            ==================================================
+            */
+
+            const item =
+                document.createElement("div");
+
+
+            item.className =
+                "bus-item";
+
+
+            item.innerHTML = `
+
+                <div>
+
+                    <div class="bus-name">
+                        🚌 ${bus.bus_id}
+                    </div>
+
+                    <div class="bus-driver">
+                        ${bus.driver_name || "Driver"}
+                    </div>
+
+                </div>
+
+                <button
+                    class="lihat-btn"
+                    onclick="
+                        focusBus(
+                            '${bus.bus_id}',
+                            ${lat},
+                            ${lng}
+                        )
+                    ">
+
+                    Lihat
+
+                </button>
+
+            `;
+
+
+            busList.appendChild(item);
+
+        });
+
+
+        /*
+        ==================================================
+        FOKUS KE SEMUA BUS PADA PERTAMA KALI
+        ==================================================
+        */
+
+        if (
+            firstLoad &&
+            data.length > 0
+        ) {
+
+            const validCoords = data
+
+                .map(function(bus) {
+
+                    const lat =
+                        parseFloat(bus.lat);
+
+                    const lng =
+                        parseFloat(bus.lng);
+
+                    if (
+                        !isNaN(lat) &&
+                        !isNaN(lng)
+                    ) {
+
+                        return [lat, lng];
+
+                    }
+
+                    return null;
+
+                })
+
+                .filter(Boolean);
+
+
+            if (validCoords.length > 0) {
+
+                map.fitBounds(
+                    validCoords,
+                    {
+                        padding: [50, 50]
+                    }
+                );
+
+            }
+
+            firstLoad = false;
+
+        }
+
+    }
+
+
+
+    /*
+    ==================================================
+    POPUP BUS
+    ==================================================
+    */
+
+    function createPopup(bus) {
+
+        return `
+
+            <div style="
+                min-width:180px;
+                text-align:center;
+            ">
+
+                <h3 style="
+                    margin:5px 0;
+                ">
+
+                    🚌 ${bus.bus_id}
+
+                </h3>
+
+                <p style="
+                    margin:5px 0;
+                ">
+
+                    Driver:
+                    <b>
+                        ${bus.driver_name || "-"}
+                    </b>
+
+                </p>
+
+                <p style="
+                    font-size:12px;
+                    color:#777;
+                    margin:5px 0;
+                ">
+
+                    📍
+                    ${parseFloat(bus.lat).toFixed(6)},
+                    ${parseFloat(bus.lng).toFixed(6)}
+
+                </p>
+
+                <p style="
+                    font-size:12px;
+                    color:#777;
+                    margin:5px 0;
+                ">
+
+                    🕒
+                    ${bus.timestamp || "-"}
+
+                </p>
+
+            </div>
+
+        `;
+
+    }
+
+
+
+    /*
+    ==================================================
+    FOKUS KE BUS
+    ==================================================
+    */
+
+    function focusBus(
+        busId,
+        lat,
+        lng
+    ) {
+
+        map.setView(
+            [lat, lng],
+            17,
+            {
+                animate: true
+            }
+        );
+
+
+        if (markers[busId]) {
+
+            markers[busId].openPopup();
+
+        }
+
+    }
+
+
+
+    /*
+    ==================================================
+    LOAD PERTAMA
+    ==================================================
+    */
+
+    loadBusData();
+
+
+
+    /*
+    ==================================================
+    AUTO REFRESH
+    ==================================================
+    */
+
+    setInterval(
+        loadBusData,
+        10000
+    );
+
+</script>
+
+
+</body>
+
+</html>
